@@ -363,5 +363,205 @@ COMMIT;
 
 
 ```
-- RESTfull сервіс для управління даними
+## RESTfull сервіс для управління даними
+
+### Створення серверу
+#### server.js
+``` js
+const express = require("express");
+const bodyParser = require("body-parser");
+const projectRouter = require("./routes/projectRoutes");
+
+const server = express();
+const SERVER_PORT = 3000;
+
+server.use(bodyParser.json());
+server.use("/project", projectRouter);
+
+server.get("/", (request, response) => {
+  response.json("Connected to server");
+});
+
+server.listen(SERVER_PORT, () => {
+  console.log(`Server is running on port ${SERVER_PORT}`);
+});
+```
+
+### Зв'язок з базою даних
+#### database.js
+``` js 
+const { Client } = require("pg");
+
+const dbClient = new Client({
+  user: "postgres",
+  host: "localhost",
+  database: "schema",
+  password: "root",
+  port: 5432,
+});
+
+dbClient
+  .connect()
+  .then(() => console.log("Connected to the database"))
+  .catch((error) => console.error("Connection error", error.stack));
+
+module.exports = dbClient;
+
+```
+
+### Контролер
+#### controller.js
+``` js
+const database = require("../models/db");
+
+exports.createProject = async (request, response) => {
+  const { name, description } = request.body;
+  try {
+    const project = await database.query(
+      "INSERT INTO schema.project (name, description) VALUES ($1, $2) RETURNING *",
+      [name, description]
+    );
+    response.json(project.rows[0]);
+  } catch (error) {
+    response.status(404).json(error.message);
+  }
+};
+
+exports.getAllProjects = async (request, response) => {
+  try {
+    const projects = await database.query("SELECT * FROM schema.project");
+    response.json(projects.rows);
+  } catch (error) {
+    response.status(404).json(error.message);
+  }
+};
+
+exports.getProjectById = async (request, response) => {
+  const id = request.params.id;
+  try {
+    const project = await database.query(
+      "SELECT * FROM schema.project WHERE idproject = $1",
+      [id]
+    );
+
+    if (!project.rows.length) throw new Error("Record not found");
+
+    response.json(project.rows[0]);
+  } catch (error) {
+    response.status(404).json(error.message);
+  }
+};
+
+exports.updateProject = async (request, response) => {
+  const id = request.params.id;
+  const data = request.body;
+
+  if (data.idproject) delete data.idproject;
+
+  try {
+    for (const [key, value] of Object.entries(data)) {
+      await database.query(
+        `UPDATE schema.project SET ${key} = $1 WHERE idproject = $2`,
+        [value, id]
+      );
+    }
+
+    const project = await database.query(
+      "SELECT * FROM schema.project WHERE idproject = $1",
+      [id]
+    );
+    response.json(project.rows[0]);
+  } catch (error) {
+    response.status(404).json(error.message);
+  }
+};
+
+exports.deleteProject = async (request, response) => {
+  const id = request.params.id;
+  try {
+    const project = await database.query(
+      "SELECT * FROM schema.project WHERE idproject = $1",
+      [id]
+    );
+
+    if (!project.rows.length) throw new Error("Record not found");
+
+    await database.query("DELETE FROM schema.project WHERE idproject = $1", [id]);
+    response.json(project.rows[0]);
+  } catch (error) {
+    response.status(404).json(error.message);
+  }
+};
+
+```
+
+### Сервіси
+#### services.js
+``` js
+const database = require("../db");
+
+exports.createRole = async (data) => {
+  const { name, description } = data;
+  const result = await database.query(
+    "INSERT INTO schema.role (name, description) VALUES ($1, $2) RETURNING *",
+    [name, description]
+  );
+  return result.rows[0];
+};
+
+exports.getAllRoles = async () => {
+  const result = await database.query("SELECT * FROM schema.role");
+  return result.rows;
+};
+
+exports.getRoleById = async (id) => {
+  const result = await database.query("SELECT * FROM schema.role WHERE idrole = $1", [
+    id,
+  ]);
+  if (!result.rows.length) throw new Error("Record not found");
+  return result.rows[0];
+};
+
+exports.updateRole = async (id, data) => {
+  const keys = Object.keys(data);
+  for (const key of keys) {
+    await database.query(`UPDATE schema.role SET ${key} = $1 WHERE idrole = $2`, [
+      data[key],
+      id,
+    ]);
+  }
+  const result = await database.query("SELECT * FROM schema.role WHERE idrole = $1", [
+    id,
+  ]);
+  return result.rows[0];
+};
+
+exports.deleteRole = async (id) => {
+  const result = await database.query("SELECT * FROM schema.role WHERE idrole = $1", [
+    id,
+  ]);
+  if (!result.rows.length) throw new Error("Record not found");
+  await database.query("DELETE FROM schema.role WHERE idrole = $1", [id]);
+  return result.rows[0];
+};
+
+```
+
+### Маршрутизація
+#### routes.js
+``` js
+const express = require("express");
+const projectHandlers = require("../controllers/projectController");
+
+const projectRouter = express.Router();
+
+projectRouter.post("/", projectHandlers.createProject);
+projectRouter.get("/", projectHandlers.getAllProjects);
+projectRouter.get("/:id", projectHandlers.getProjectById);
+projectRouter.patch("/:id", projectHandlers.updateProject);
+projectRouter.delete("/:id", projectHandlers.deleteProject);
+
+module.exports = projectRouter;
+
+```
 
